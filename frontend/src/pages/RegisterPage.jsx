@@ -1,250 +1,210 @@
-import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import React, { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import toast from 'react-hot-toast'
 import { useAuth } from '../context/AuthContext'
-import axiosInstance from '../api/axiosInstance'
-import Navbar from '../components/Navbar'
-import CourseCard from '../components/CourseCard'
-import SubmissionChart from '../components/SubmissionChart'
-import { PlusIcon, BooksIcon, UsersIcon, NoteIcon, SchoolIcon } from '../components/Icons'
+import { GraduationCapIcon, EyeIcon, EyeOffIcon, StudentIcon, ProfessorIcon } from '../components/Icons'
 
-const SkeletonCard = () => (
-  <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 animate-pulse">
-    <div className="flex gap-3 mb-4">
-      <div className="w-10 h-10 rounded-lg bg-gray-200" />
-      <div className="flex-1 space-y-2">
-        <div className="h-4 bg-gray-200 rounded w-3/4" />
-        <div className="h-3 bg-gray-200 rounded w-1/2" />
-      </div>
-    </div>
-    <div className="space-y-2">
-      <div className="h-3 bg-gray-200 rounded" />
-      <div className="h-3 bg-gray-200 rounded w-5/6" />
-    </div>
-  </div>
-)
-
-const CreateCourseModal = ({ onClose, onCreate }) => {
-  const [form, setForm] = useState({ title: '', description: '' })
+const RegisterPage = () => {
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+    role: 'student',
+  })
   const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const { register } = useAuth()
+  const navigate = useNavigate()
+
+  const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value })
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!form.title.trim()) {
-      toast.error('Course title is required')
+    if (!formData.name.trim() || !formData.email.trim() || !formData.password) {
+      toast.error('Please fill in all required fields')
+      return
+    }
+    if (formData.password.length < 6) {
+      toast.error('Password must be at least 6 characters')
+      return
+    }
+    if (formData.password !== formData.confirmPassword) {
+      toast.error('Passwords do not match')
       return
     }
     setLoading(true)
     try {
-      await axiosInstance.post('/courses', form)
-      toast.success('Course created successfully!')
-      onCreate()
-      onClose()
+      const user = await register(formData.name.trim(), formData.email.trim(), formData.password, formData.role)
+      toast.success(`Account created! Welcome, ${user.name}!`)
+      navigate(user.role === 'professor' ? '/professor/dashboard' : '/student/dashboard')
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to create course')
+      toast.error(err.response?.data?.message || 'Registration failed. Please try again.')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
-      <motion.div
-        initial={{ scale: 0.9, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md"
-      >
-        <h3 className="text-lg font-semibold text-gray-900 mb-1">Create New Course</h3>
-        <p className="text-sm text-gray-500 mb-4">Add a new course for your students</p>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Course Title *</label>
-            <input
-              type="text"
-              required
-              value={form.title}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-              placeholder="e.g. Introduction to Python"
-              className="input-field"
-              autoFocus
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <textarea
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              placeholder="Brief description of the course..."
-              rows={3}
-              className="input-field resize-none"
-            />
-          </div>
-          <div className="flex gap-3">
-            <button type="button" onClick={onClose} className="flex-1 btn-secondary py-2.5">
-              Cancel
-            </button>
-            <button type="submit" disabled={loading} className="flex-1 btn-primary py-2.5 flex items-center justify-center gap-2">
-              {loading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : null}
-              Create Course
-            </button>
-          </div>
-        </form>
-      </motion.div>
-    </div>
-  )
-}
-
-const ProfessorDashboard = () => {
-  const { user } = useAuth()
-  const navigate = useNavigate()
-  const [courses, setCourses] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [showCreateModal, setShowCreateModal] = useState(false)
-
-  const fetchCourses = async () => {
-    try {
-      const res = await axiosInstance.get('/courses')
-      setCourses(res.data.courses)
-    } catch (err) {
-      toast.error('Failed to load courses')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchCourses()
-  }, [])
-
-  // Compute stats
-  const totalStudents = courses.reduce((acc, c) => {
-    const count = c.studentCount !== undefined ? c.studentCount : (c.studentIds?.length || 0)
-    return acc + count
-  }, 0)
-
-  const totalAssignments = courses.reduce((acc, c) => acc + (c.assignmentIds?.length || 0), 0)
-
-  const statCards = [
-    { label: 'Total Courses', value: courses.length, Icon: BooksIcon, color: '#1A73E8' },
-    { label: 'Total Students', value: totalStudents, Icon: UsersIcon, color: '#1E8E3E' },
-    { label: 'Total Assignments', value: totalAssignments, Icon: NoteIcon, color: '#E65100' },
-  ]
-
-  return (
-    <div className="min-h-screen bg-surface dark:bg-surface-dark transition-colors duration-200">
-      <Navbar />
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-2xl font-medium text-gray-800 dark:text-gray-100">Your Classes</h1>
-            <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">Welcome back, {user?.name}</p>
-          </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="btn-primary flex items-center gap-2 self-start sm:self-auto"
-          >
-            <PlusIcon className="w-4 h-4" />
-            Create Class
-          </button>
+    <div className="min-h-screen flex flex-col bg-surface dark:bg-surface-dark">
+      {/* Google Classroom-style top bar */}
+      <div className="bg-white dark:bg-gray-900 shadow-gc px-6 py-3 flex items-center gap-2">
+        <div className="w-7 h-7 rounded flex items-center justify-center bg-gblue-600">
+          <GraduationCapIcon className="w-4 h-4 text-white" />
         </div>
+        <span className="text-lg font-medium text-gray-700 dark:text-gray-200">
+          Joi<span className="text-gblue-600">neazy</span>
+        </span>
+      </div>
 
-        {/* Stats Row */}
-        {!loading && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-            {statCards.map((stat, i) => (
-              <motion.div
-                key={stat.label}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.1 }}
-                className="bg-white dark:bg-gray-800 rounded-lg shadow-gc p-5 flex items-center gap-4"
-              >
-                <div
-                  className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0"
-                  style={{ backgroundColor: stat.color + '1a' }}
-                >
-                  <stat.Icon className="w-5 h-5" style={{ color: stat.color }} />
-                </div>
+      <div className="flex-1 flex items-center justify-center px-4 py-10">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: 'easeOut' }}
+          className="w-full max-w-sm"
+        >
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-gc-md overflow-hidden">
+            {/* Blue header strip */}
+            <div className="bg-gblue-600 px-8 py-5 text-center">
+              <div className="w-12 h-12 rounded-full bg-white bg-opacity-20 flex items-center justify-center mx-auto mb-2">
+                <GraduationCapIcon className="w-7 h-7 text-white" />
+              </div>
+              <h1 className="text-xl font-medium text-white">Create account</h1>
+              <p className="text-gblue-100 text-sm mt-0.5">Join Joineazy today</p>
+            </div>
+
+            <div className="px-8 py-6">
+              <form onSubmit={handleSubmit} className="space-y-4">
+
+                {/* Full Name */}
                 <div>
-                  <p className="text-2xl font-medium text-gray-800 dark:text-gray-100">{stat.value}</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{stat.label}</p>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" htmlFor="name">
+                    Full Name
+                  </label>
+                  <input
+                    id="name" name="name" type="text" required
+                    value={formData.name} onChange={handleChange}
+                    placeholder="John Doe"
+                    className="input-field"
+                    autoComplete="name"
+                    autoFocus
+                  />
                 </div>
-              </motion.div>
-            ))}
-          </div>
-        )}
 
-        {/* Submission Analytics Chart */}
-        {!loading && courses.length > 0 && (() => {
-          const agg = courses.reduce(
-            (acc, c) => {
-              if (c.submissionStats) {
-                acc.submitted += c.submissionStats.submitted || 0
-                acc.acknowledged += c.submissionStats.acknowledged || 0
-                acc.pending += c.submissionStats.pending || 0
-                acc.total += c.submissionStats.total || 0
-              }
-              return acc
-            },
-            { submitted: 0, acknowledged: 0, pending: 0, total: 0 }
-          )
-          return agg.total > 0 ? (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-gc p-6 mb-8">
-              <h2 className="text-base font-medium text-gray-800 dark:text-gray-100 mb-1">Submission Overview</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Aggregated across all classes</p>
-              <SubmissionChart stats={agg} />
+                {/* Email */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" htmlFor="email">
+                    Email address
+                  </label>
+                  <input
+                    id="email" name="email" type="email" required
+                    value={formData.email} onChange={handleChange}
+                    placeholder="you@example.com"
+                    className="input-field"
+                    autoComplete="email"
+                  />
+                </div>
+
+                {/* Password */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" htmlFor="password">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="password" name="password"
+                      type={showPassword ? 'text' : 'password'}
+                      required minLength={6}
+                      value={formData.password} onChange={handleChange}
+                      placeholder="At least 6 characters"
+                      className="input-field pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showPassword ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Confirm Password */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" htmlFor="confirmPassword">
+                    Confirm Password
+                  </label>
+                  <input
+                    id="confirmPassword" name="confirmPassword" type="password" required
+                    value={formData.confirmPassword} onChange={handleChange}
+                    placeholder="Repeat your password"
+                    className="input-field"
+                  />
+                </div>
+
+                {/* Role selection — Google Classroom style chips */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    I am a...
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { value: 'student',   label: 'Student',   Icon: StudentIcon,   activeColor: '#1E8E3E' },
+                      { value: 'professor', label: 'Professor', Icon: ProfessorIcon, activeColor: '#1A73E8' },
+                    ].map(({ value, label, Icon, activeColor }) => {
+                      const isActive = formData.role === value
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setFormData({ ...formData, role: value })}
+                          className="flex items-center justify-center gap-2 py-2.5 px-4 rounded border-2 text-sm font-medium transition-all duration-150"
+                          style={isActive ? {
+                            borderColor: activeColor,
+                            backgroundColor: activeColor + '12',
+                            color: activeColor,
+                          } : {
+                            borderColor: '#e5e7eb',
+                            backgroundColor: 'transparent',
+                            color: '#6b7280',
+                          }}
+                        >
+                          <Icon className="w-4 h-4" />
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full btn-primary py-2.5 flex items-center justify-center gap-2 mt-1"
+                >
+                  {loading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Creating account...
+                    </>
+                  ) : 'Create account'}
+                </button>
+              </form>
+
+              <div className="mt-5 pt-4 border-t border-gray-100 dark:border-gray-700 text-center">
+                <span className="text-sm text-gray-500 dark:text-gray-400">Already have an account? </span>
+                <Link to="/login" className="text-sm text-gblue-600 dark:text-gblue-400 font-medium hover:underline">
+                  Sign in
+                </Link>
+              </div>
             </div>
-          ) : null
-        })()}
-
-        {/* Courses Grid */}
-        {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[1, 2, 3].map((i) => <SkeletonCard key={i} />)}
           </div>
-        ) : courses.length === 0 ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-center py-20"
-          >
-            <div className="flex justify-center mb-4">
-              <SchoolIcon className="w-16 h-16 text-gblue-200" />
-            </div>
-            <h3 className="text-xl font-medium text-gray-800 dark:text-gray-100 mb-2">No classes yet</h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-6">Create your first class to start managing assignments</p>
-            <button onClick={() => setShowCreateModal(true)} className="btn-primary">
-              Create your first class
-            </button>
-          </motion.div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {courses.map((course) => (
-              <CourseCard
-                key={course._id}
-                course={course}
-                role="professor"
-                onClick={() => navigate(`/professor/courses/${course._id}/assignments`)}
-              />
-            ))}
-          </div>
-        )}
-      </main>
-
-      <AnimatePresence>
-        {showCreateModal && (
-          <CreateCourseModal
-            onClose={() => setShowCreateModal(false)}
-            onCreate={fetchCourses}
-          />
-        )}
-      </AnimatePresence>
+        </motion.div>
+      </div>
     </div>
   )
 }
 
-export default ProfessorDashboard
+export default RegisterPage
